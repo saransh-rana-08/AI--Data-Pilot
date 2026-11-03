@@ -13,11 +13,13 @@ import {
 import { useDatabase } from '../../context/DatabaseContext';
 
 export default function ResultTable() {
-  const { activeQuery, isGenerating, executeAiGeneration, addToast } = useDatabase();
+  const { activeQuery, isGenerating, executeAiGeneration, addToast, tables, dbConfig } = useDatabase();
   const [filterText, setFilterText] = useState('');
   const [sortKey, setSortKey] = useState(null);
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc' | 'desc'
   const [copiedJson, setCopiedJson] = useState(false);
+
+  const safePrompt = tables && tables.length > 0 ? `Show first 10 records from ${tables[0].name}` : 'SELECT 1';
 
   if (isGenerating || !activeQuery) return null;
 
@@ -39,7 +41,7 @@ export default function ResultTable() {
 
         <div className="flex items-center gap-2 pt-2 border-t border-dark-800">
           <button
-            onClick={() => executeAiGeneration('What are the top 5 students by CGPA?')}
+            onClick={() => executeAiGeneration(safePrompt)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-dark-750 border border-dark-700 text-xs font-medium text-dark-200 transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -159,6 +161,21 @@ export default function ResultTable() {
           </button>
         </div>
       </div>
+
+      {/* AI Explanation / Insight Banner */}
+      {activeQuery.explanation && (
+        <div className="px-4 py-2 bg-indigo-500/10 border-b border-indigo-500/20 text-xs text-indigo-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-indigo-400">AI Insight:</span>
+            <span>{activeQuery.explanation}</span>
+          </div>
+          {activeQuery.model && (
+            <span className="text-[10px] text-indigo-300/80 font-mono bg-indigo-900/40 px-2 py-0.5 rounded border border-indigo-500/20">
+              {activeQuery.model}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Grid Table */}
       {processedRows.length === 0 ? (

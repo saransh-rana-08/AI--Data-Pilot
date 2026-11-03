@@ -3,7 +3,7 @@ import { Copy, Check, Play, RotateCcw, CheckCircle2, AlertCircle, Clock, Databas
 import { useDatabase } from '../../context/DatabaseContext';
 
 export default function SQLViewer() {
-  const { activeQuery, reRunSQL, clearQuery, addToast, isGenerating } = useDatabase();
+  const { activeQuery, reRunSQL, clearQuery, addToast, isGenerating, dbConfig } = useDatabase();
   const [editableSql, setEditableSql] = useState('');
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -123,7 +123,7 @@ export default function SQLViewer() {
           <span>•</span>
           <div className="flex items-center gap-1">
             <Database className="w-3.5 h-3.5 text-dark-400" />
-            <span>college_db</span>
+            <span>{activeQuery.database || dbConfig.name || 'database'}</span>
           </div>
         </div>
       </div>

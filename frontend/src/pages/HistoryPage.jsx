@@ -6,7 +6,7 @@ import EmptyState from '../components/common/EmptyState';
 import { useDatabase } from '../context/DatabaseContext';
 
 export default function HistoryPage() {
-  const { historyList, navigate } = useDatabase();
+  const { historyList, navigate, dbConfig } = useDatabase();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Successful' | 'Failed'
   const [selectedQuery, setSelectedQuery] = useState(null);
@@ -105,7 +105,7 @@ export default function HistoryPage() {
                     </td>
 
                     <td className="py-3.5 px-4 text-dark-300 font-mono text-xs hidden md:table-cell">
-                      college_db
+                      {q.database || dbConfig?.name || 'database'}
                     </td>
 
                     <td className="py-3.5 px-4">

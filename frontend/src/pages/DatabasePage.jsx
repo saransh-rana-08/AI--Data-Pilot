@@ -30,12 +30,19 @@ export default function DatabasePage() {
           <div className="flex items-center gap-2 mt-1 text-xs text-dark-400 font-mono">
             <span className="font-semibold text-dark-200">{dbConfig.name}</span>
             <span>•</span>
-            <span>{dbConfig.type} 8.0</span>
+            <span>{dbConfig.type}</span>
             <span>•</span>
-            <span className="text-emerald-400 flex items-center gap-1 font-sans">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              Connected
-            </span>
+            {dbConfig.connected ? (
+              <span className="text-emerald-400 flex items-center gap-1 font-sans">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Connected
+              </span>
+            ) : (
+              <span className="text-rose-400 flex items-center gap-1 font-sans">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                Disconnected
+              </span>
+            )}
           </div>
         </div>
 

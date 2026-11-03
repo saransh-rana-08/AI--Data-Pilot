@@ -10,8 +10,9 @@ router = APIRouter(prefix="/api/connection", tags=["Connection"])
 
 class ConnectionConfigRequest(BaseModel):
     """Request model for supplying database connection parameters."""
-    host: str = Field(..., min_length=1, description="Database hostname (e.g. Aiven host)")
-    port: int = Field(3306, description="Database port (default 3306)")
+    db_type: Optional[str] = Field("mysql", description="Database dialect: mysql or postgresql")
+    host: str = Field(..., min_length=1, description="Database hostname (e.g. Aiven or Neon host)")
+    port: int = Field(3306, description="Database port (default 3306 for MySQL, 5432 for PostgreSQL)")
     database: str = Field(..., min_length=1, description="Database name")
     user: str = Field(..., min_length=1, description="Database user")
     password: str = Field("", description="Database password")
@@ -28,6 +29,7 @@ class ConnectionTestResponse(BaseModel):
 class CurrentConnectionResponse(BaseModel):
     """Response model for current database configuration."""
     connected: bool = Field(..., description="Current connectivity status")
+    db_type: str = Field(..., description="Configured database dialect (mysql or postgresql)")
     host: str = Field(..., description="Configured host")
     port: int = Field(..., description="Configured port")
     database: str = Field(..., description="Configured database name")
@@ -46,6 +48,7 @@ async def get_current_connection():
     test_res = db_service.test_connection()
     return CurrentConnectionResponse(
         connected=test_res.get("success", False),
+        db_type=settings.DB_TYPE,
         host=settings.DB_HOST,
         port=settings.DB_PORT,
         database=settings.DB_NAME,
@@ -86,14 +89,15 @@ async def test_database_connection():
     description="Tests connectivity with custom parameters submitted from the frontend without persisting them."
 )
 async def test_custom_credentials(config: ConnectionConfigRequest):
-    """Verify submitted credentials against MySQL database."""
+    """Verify submitted credentials against database."""
     result = db_service.test_custom_connection(
         host=config.host,
         port=config.port,
         database=config.database,
         user=config.user,
         password=config.password,
-        ssl_mode=config.ssl_mode or "REQUIRED"
+        ssl_mode=config.ssl_mode or "REQUIRED",
+        db_type=config.db_type or "mysql"
     )
     if result["success"]:
         return ConnectionTestResponse(
@@ -125,7 +129,8 @@ async def connect_and_save_database(config: ConnectionConfigRequest):
         database=config.database,
         user=config.user,
         password=config.password,
-        ssl_mode=config.ssl_mode or "REQUIRED"
+        ssl_mode=config.ssl_mode or "REQUIRED",
+        db_type=config.db_type or "mysql"
     )
     if result["success"]:
         return ConnectionTestResponse(
@@ -141,3 +146,14 @@ async def connect_and_save_database(config: ConnectionConfigRequest):
             "message": result["message"]
         }
     )
+
+
+@router.post(
+    "/disconnect",
+    summary="Disconnect Database",
+    description="Disconnects the active database, disposes pooled connections, and clears credentials."
+)
+async def disconnect_active_database():
+    """Disconnect active database and clear credentials."""
+    result = db_service.disconnect()
+    return result

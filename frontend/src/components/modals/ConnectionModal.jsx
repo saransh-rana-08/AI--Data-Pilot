@@ -9,7 +9,8 @@ import {
   User, 
   FolderGit2, 
   AlertCircle,
-  Unplug
+  Unplug,
+  ShieldCheck
 } from 'lucide-react';
 import { useDatabase } from '../../context/DatabaseContext';
 import { testConnection } from '../../services/api';
@@ -24,22 +25,30 @@ export default function ConnectionModal() {
     addToast
   } = useDatabase();
 
-  const [dbType, setDbType] = useState(dbConfig?.type || 'MySQL');
-  const [host, setHost] = useState(dbConfig?.host || 'mysql-18a0a7e9-saranshrana08-b982.b.aivencloud.com');
-  const [port, setPort] = useState(String(dbConfig?.port || '15352'));
-  const [dbName, setDbName] = useState(dbConfig?.name || 'defaultdb');
-  const [username, setUsername] = useState(dbConfig?.user || 'avnadmin');
+  const [dbType, setDbType] = useState('MySQL');
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('3306');
+  const [dbName, setDbName] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [sslMode, setSslMode] = useState('REQUIRED');
 
-  // Sync state if dbConfig updates
+  // Initialize form state once when modal opens, without overwriting while user is typing
   React.useEffect(() => {
-    if (dbConfig) {
-      if (dbConfig.host) setHost(dbConfig.host);
-      if (dbConfig.port) setPort(String(dbConfig.port));
-      if (dbConfig.name) setDbName(dbConfig.name);
-      if (dbConfig.user) setUsername(dbConfig.user);
+    if (isConnectionModalOpen) {
+      const isPg = (dbConfig?.type || '').toLowerCase().includes('postgr');
+      setDbType(isPg ? 'PostgreSQL' : 'MySQL');
+      setHost(dbConfig?.host && dbConfig.host !== 'localhost' ? dbConfig.host : (dbConfig?.host || ''));
+      setPort(dbConfig?.port ? String(dbConfig.port) : (isPg ? '5432' : '3306'));
+      const activeName = dbConfig?.name && dbConfig.name !== 'No Database' ? dbConfig.name : '';
+      setDbName(activeName);
+      setUsername(dbConfig?.user || '');
+      setSslMode(dbConfig?.ssl_mode || 'REQUIRED');
+      setPassword('');
+      setTestStatus('idle');
+      setTestStepMessage('');
     }
-  }, [dbConfig]);
+  }, [isConnectionModalOpen]);
 
   // Test connection simulation states: 'idle' | 'testing' | 'success' | 'failed'
   const [testStatus, setTestStatus] = useState('idle');
@@ -51,25 +60,24 @@ export default function ConnectionModal() {
     setDbType(type);
     if (type === 'MySQL') setPort('3306');
     else if (type === 'PostgreSQL') setPort('5432');
-    else if (type === 'SQLite') setPort('N/A (File)');
     setTestStatus('idle');
   };
 
   const runTestConnection = async () => {
     setTestStatus('testing');
-    setTestStepMessage(`Testing connection to ${host}:${port}...`);
+    const isPg = dbType.toLowerCase().includes('postgr');
+    setTestStepMessage(`Testing connection to ${dbType} at ${host}:${port}...`);
 
     try {
-      const creds = password
-        ? {
-            host,
-            port: Number(port) || 3306,
-            database: dbName,
-            user: username,
-            password,
-            ssl_mode: 'DISABLED'
-          }
-        : null;
+      const creds = {
+        db_type: isPg ? 'postgresql' : 'mysql',
+        host,
+        port: Number(port) || (isPg ? 5432 : 3306),
+        database: dbName,
+        user: username,
+        password: password || '',
+        ssl_mode: sslMode
+      };
 
       const data = await testConnection(creds);
       setTestStatus('success');
@@ -89,17 +97,19 @@ export default function ConnectionModal() {
   const handleSaveConnection = async (e) => {
     e.preventDefault();
     setTestStatus('testing');
-    setTestStepMessage(`Connecting and saving credentials...`);
+    setTestStepMessage(`Connecting to ${dbType} and saving credentials...`);
 
+    const isPg = dbType.toLowerCase().includes('postgr');
     const ok = await connectDatabase({
       name: dbName,
       database: dbName,
       type: dbType,
+      db_type: isPg ? 'postgresql' : 'mysql',
       host,
-      port: Number(port) || 3306,
+      port: Number(port) || (isPg ? 5432 : 3306),
       user: username,
       password: password || '',
-      ssl_mode: 'DISABLED'
+      ssl_mode: sslMode
     });
 
     if (ok) {
@@ -142,8 +152,8 @@ export default function ConnectionModal() {
             <label className="block text-xs font-medium text-dark-300 mb-2">
               Database Type
             </label>
-            <div className="grid grid-cols-3 gap-2.5">
-              {['MySQL', 'PostgreSQL', 'SQLite'].map(type => (
+            <div className="grid grid-cols-2 gap-2.5">
+              {['MySQL', 'PostgreSQL'].map(type => (
                 <button
                   type="button"
                   key={type}
@@ -203,7 +213,7 @@ export default function ConnectionModal() {
                 value={dbName}
                 onChange={(e) => { setDbName(e.target.value); setTestStatus('idle'); }}
                 className="w-full pl-9 pr-3 py-2 bg-dark-850 border border-dark-700 rounded-lg text-xs text-dark-100 placeholder-dark-400 outline-none focus:border-indigo-500 transition-colors font-mono"
-                placeholder="college_db"
+                placeholder="e.g. customer"
                 required
               />
             </div>
@@ -240,6 +250,43 @@ export default function ConnectionModal() {
                   placeholder="Password"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* SSL / TLS Encryption Mode */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-dark-300 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                <span>SSL / TLS Encryption</span>
+              </label>
+              <span className="text-[11px] text-dark-400">
+                {sslMode === 'REQUIRED' ? 'Encrypted (Cloud: Neon / Aiven / RDS)' : 'Disabled (Local host)'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => { setSslMode('REQUIRED'); setTestStatus('idle'); }}
+                className={`px-3 py-2 rounded-lg text-xs font-medium border text-center transition-all ${
+                  sslMode === 'REQUIRED'
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 shadow-sm'
+                    : 'bg-dark-850 border-dark-700 text-dark-400 hover:text-dark-200 hover:bg-dark-800'
+                }`}
+              >
+                SSL Required (Cloud)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSslMode('DISABLED'); setTestStatus('idle'); }}
+                className={`px-3 py-2 rounded-lg text-xs font-medium border text-center transition-all ${
+                  sslMode === 'DISABLED'
+                    ? 'bg-indigo-600/10 border-indigo-500 text-white shadow-sm'
+                    : 'bg-dark-850 border-dark-700 text-dark-400 hover:text-dark-200 hover:bg-dark-800'
+                }`}
+              >
+                SSL Disabled (Local)
+              </button>
             </div>
           </div>
 
@@ -283,7 +330,10 @@ export default function ConnectionModal() {
             {dbConfig.connected ? (
               <button
                 type="button"
-                onClick={disconnectDatabase}
+                onClick={async () => {
+                  await disconnectDatabase();
+                  setTestStatus('idle');
+                }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
               >
                 <Unplug className="w-3.5 h-3.5" />

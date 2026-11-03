@@ -7,11 +7,22 @@ export default function QueryInput() {
     queryPrompt, 
     setQueryPrompt, 
     executeAiGeneration, 
-    isGenerating,
-    dbConfig 
+    isGenerating, 
+    dbConfig,
+    aiConfig,
+    tables
   } = useDatabase();
 
-  const suggestions = [
+  const primaryTable = tables && tables.length > 0 ? tables[0] : null;
+  const tableName = primaryTable ? primaryTable.name : 'records';
+  
+  const suggestions = primaryTable ? [
+    `${tableName} with age less than 30`,
+    `Top 5 ${tableName} by total amount`,
+    `Show all ${tableName} from Delhi`,
+    `List ${tableName} where total_amount > 4000`,
+    `Count of ${tableName} by city`,
+  ] : [
     'What are the top 5 students by CGPA?',
     'Students with CGPA above 9.0',
     'Professors in Computer Science department',
@@ -37,10 +48,18 @@ export default function QueryInput() {
       <div className="relative rounded-2xl bg-dark-900 border border-dark-700/90 focus-within:border-indigo-500/80 focus-within:ring-1 focus-within:ring-indigo-500/30 transition-all shadow-subtle group">
         <div className="p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-dark-400 flex items-center gap-1.5 uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              Ask your database a question
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-dark-400 flex items-center gap-1.5 uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                Ask your database a question
+              </span>
+              {aiConfig?.has_api_key && (
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  Groq LLM Active
+                </span>
+              )}
+            </div>
             {queryPrompt && (
               <button
                 onClick={() => setQueryPrompt('')}
@@ -56,7 +75,7 @@ export default function QueryInput() {
             value={queryPrompt}
             onChange={(e) => setQueryPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="e.g. What are the top 5 students by CGPA, or show active courses..."
+            placeholder={primaryTable ? `e.g. ${tableName} with age less than 30, or top 5 by total amount...` : "e.g. Ask your database a question in plain English..."}
             rows={3}
             disabled={isGenerating || !dbConfig.connected}
             className="w-full bg-transparent text-sm text-dark-100 placeholder-dark-400 outline-none resize-none leading-relaxed"

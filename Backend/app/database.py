@@ -18,9 +18,16 @@ def get_engine() -> Engine:
         db_url = settings.get_database_url()
         connect_args = {}
         
-        # Aiven MySQL requires or recommends SSL
-        if settings.DB_SSL_MODE.upper() == "REQUIRED":
-            connect_args["ssl"] = {"ssl_mode": "REQUIRED"}
+        db_type = (settings.DB_TYPE or "mysql").strip().lower()
+        if db_type in ("postgresql", "postgres"):
+            if settings.DB_SSL_MODE.upper() in ("REQUIRED", "REQUIRE"):
+                connect_args["sslmode"] = "require"
+            elif settings.DB_SSL_MODE.upper() == "DISABLED":
+                connect_args["sslmode"] = "disable"
+        else:
+            # MySQL / PyMySQL SSL configuration
+            if settings.DB_SSL_MODE.upper() == "REQUIRED":
+                connect_args["ssl"] = {"ssl_mode": "REQUIRED"}
             
         logger.info(f"Initializing database engine for: {settings.get_masked_db_info()}")
         

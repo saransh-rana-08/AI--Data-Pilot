@@ -4,7 +4,7 @@ import StatusBadge from '../common/StatusBadge';
 import { useDatabase } from '../../context/DatabaseContext';
 
 export default function QueryDetailDrawer({ query, onClose }) {
-  const { navigate, addToast } = useDatabase();
+  const { navigate, addToast, dbConfig } = useDatabase();
   const [copied, setCopied] = React.useState(false);
 
   if (!query) return null;
@@ -117,7 +117,7 @@ export default function QueryDetailDrawer({ query, onClose }) {
           <div className="p-3.5 rounded-xl bg-dark-850/60 border border-dark-700/60 flex items-center justify-between text-xs text-dark-300">
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-dark-400" />
-              <span>Target: <strong className="font-mono text-dark-100">college_db</strong> (MySQL 8.0)</span>
+              <span>Target: <strong className="font-mono text-dark-100">{query.database || dbConfig?.name || 'database'}</strong> ({dbConfig?.type || 'SQL'})</span>
             </div>
             <span className="text-dark-400 text-[11px]">{query.timestamp || 'Recent'}</span>
           </div>

@@ -18,7 +18,7 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'query', label: 'Query', icon: Terminal },
-    { id: 'database', label: 'Database', icon: Database, badge: dbConfig.connected ? '12' : null },
+    { id: 'database', label: 'Database', icon: Database, badge: dbConfig.connected ? String(dbConfig.totalTables || '') : null },
     { id: 'history', label: 'History', icon: History },
   ];
 

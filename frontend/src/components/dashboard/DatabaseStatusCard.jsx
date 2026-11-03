@@ -34,18 +34,26 @@ export default function DatabaseStatusCard() {
             <h2 className="text-base font-semibold text-dark-100 font-mono">
               {dbConfig.connected ? dbConfig.name : 'None'}
             </h2>
-            <span className="text-xs text-dark-400">•</span>
-            <span className="text-xs text-dark-300 font-medium">
-              {dbConfig.type} {dbConfig.version || '8.0'}
-            </span>
+            {dbConfig.connected && (
+              <>
+                <span className="text-xs text-dark-400">•</span>
+                <span className="text-xs text-dark-300 font-medium">
+                  {dbConfig.type} {dbConfig.version ? `v${dbConfig.version}` : ''}
+                </span>
+              </>
+            )}
             <span className="text-xs text-dark-400">•</span>
             <span className="text-xs text-dark-400">
               {dbConfig.connected ? `${dbConfig.totalTables} tables detected` : 'No schema loaded'}
             </span>
-            <span className="text-xs text-dark-400">•</span>
-            <span className="text-xs text-dark-400">
-              Connected {dbConfig.connectedAt || 'just now'}
-            </span>
+            {dbConfig.connected && (
+              <>
+                <span className="text-xs text-dark-400">•</span>
+                <span className="text-xs text-dark-400">
+                  Connected {dbConfig.connectedAt || 'just now'}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>

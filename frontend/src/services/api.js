@@ -57,6 +57,18 @@ export async function saveAndConnectDatabase(credentials) {
 }
 
 /**
+ * Disconnect active database and reset connection on backend.
+ */
+export async function disconnectDatabaseAPI() {
+  const response = await fetch(`${API_BASE_URL}/api/connection/disconnect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const data = await response.json();
+  return data;
+}
+
+/**
  * Introspect full database schema (all tables, columns, primary keys, foreign keys).
  */
 export async function fetchDatabaseSchema() {
@@ -105,6 +117,58 @@ export async function executeSQLQuery(sql) {
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.detail || data.error || 'SQL execution failed');
+  }
+  return data;
+}
+
+/**
+ * Generate read-only SQL from natural language using LangChain + Groq.
+ */
+export async function generateAISQL(prompt, options = {}) {
+  const payload = {
+    prompt,
+    api_key: options.apiKey || undefined,
+    model: options.model || undefined,
+    execute: options.execute !== undefined ? options.execute : true,
+  };
+
+  const response = await fetch(`${API_BASE_URL}/api/query/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || data.detail || 'AI SQL generation failed');
+  }
+  return data;
+}
+
+/**
+ * Fetch current Groq AI configuration.
+ */
+export async function fetchAIConfig() {
+  const response = await fetch(`${API_BASE_URL}/api/query/ai-config`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI configuration');
+  }
+  return data;
+}
+
+/**
+ * Save Groq AI configuration (API key and model).
+ */
+export async function updateAIConfig(config) {
+  const response = await fetch(`${API_BASE_URL}/api/query/ai-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || 'Failed to update AI configuration');
   }
   return data;
 }

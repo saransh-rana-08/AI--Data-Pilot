@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Tuple
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from app.database import get_engine
+from app.config import settings
+from typing import Optional
 
 logger = logging.getLogger("datapilot.db_service")
 
@@ -34,10 +36,10 @@ def serialize_value(val: Any) -> Any:
     return str(val)
 
 
-def validate_sql(sql: str) -> Tuple[bool, str]:
+def validate_sql(sql: str, dialect: Optional[str] = None) -> Tuple[bool, str]:
     """
     Validates that a SQL query is strictly single-statement and read-only.
-    Uses sqlglot AST parsing when available, with a rigorous token fallback.
+    Uses sqlglot AST parsing (with PostgreSQL or MySQL dialect) when available, with a rigorous token fallback.
     """
     if not sql or not sql.strip():
         return False, "Query string is empty"
@@ -49,10 +51,13 @@ def validate_sql(sql: str) -> Tuple[bool, str]:
         import sqlglot
         from sqlglot import exp
 
+        active_type = (dialect or getattr(settings, "DB_TYPE", "mysql") or "mysql").strip().lower()
+        active_dialect = "postgres" if active_type in ("postgresql", "postgres") else "mysql"
+
         try:
-            expressions = sqlglot.parse(cleaned_sql, read="mysql")
-        except Exception as parse_err:
-            # Fall back to generic dialect if mysql dialect parser encounters syntax specifics
+            expressions = sqlglot.parse(cleaned_sql, read=active_dialect)
+        except Exception:
+            # Fall back to generic dialect if specific parser encounters syntax specifics
             try:
                 expressions = sqlglot.parse(cleaned_sql)
             except Exception as e:
@@ -129,9 +134,15 @@ class DatabaseService:
     @staticmethod
     def test_connection() -> Dict[str, Any]:
         """
-        Execute 'SELECT 1' to verify connection to the MySQL database.
+        Execute 'SELECT 1' to verify connection to the active database.
         Returns success status and latency.
         """
+        if not settings.DB_HOST or not settings.DB_HOST.strip() or not settings.DB_NAME:
+            return {
+                "success": False,
+                "message": "No active database connection configured"
+            }
+
         start_time = time.perf_counter()
         try:
             engine = get_engine()
@@ -156,6 +167,48 @@ class DatabaseService:
                 "success": False,
                 "message": "Database connection failed"
             }
+
+    @staticmethod
+    def disconnect() -> Dict[str, Any]:
+        """Disconnect active database and clear credentials."""
+        from app.config import settings, BASE_DIR
+        from app.database import reset_engine
+
+        reset_engine()
+
+        settings.DB_HOST = ""
+        settings.DB_NAME = ""
+        settings.DB_USER = ""
+        settings.DB_PASSWORD = ""
+
+        env_path = BASE_DIR / ".env"
+        try:
+            lines = [
+                f"# Database Configuration (Disconnected)",
+                f"DB_TYPE={settings.DB_TYPE}",
+                f"DB_HOST=",
+                f"DB_PORT={settings.DB_PORT}",
+                f"DB_NAME=",
+                f"DB_USER=",
+                f"DB_PASSWORD=",
+                f"DB_SSL_MODE={settings.DB_SSL_MODE}",
+                f"",
+                f"# Groq AI & LangChain Configuration",
+                f"GROQ_API_KEY={settings.GROQ_API_KEY}",
+                f"GROQ_MODEL={settings.GROQ_MODEL}",
+                f"",
+                f"APP_HOST={settings.APP_HOST}",
+                f"APP_PORT={settings.APP_PORT}",
+                f"CORS_ORIGINS={settings.CORS_ORIGINS}"
+            ]
+            env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not persist disconnected state to .env: {e}")
+
+        return {
+            "success": True,
+            "message": "Database disconnected successfully"
+        }
     @staticmethod
     def test_custom_connection(
         host: str,
@@ -163,20 +216,33 @@ class DatabaseService:
         database: str,
         user: str,
         password: str,
-        ssl_mode: str = "REQUIRED"
+        ssl_mode: str = "REQUIRED",
+        db_type: str = "mysql"
     ) -> Dict[str, Any]:
-        """Test connectivity with custom provided credentials."""
+        """Test connectivity with custom provided credentials for MySQL or PostgreSQL."""
         from urllib.parse import quote_plus
         from sqlalchemy import create_engine
         
         start_time = time.perf_counter()
         escaped_user = quote_plus(user)
         escaped_pw = quote_plus(password)
-        db_url = f"mysql+pymysql://{escaped_user}:{escaped_pw}@{host}:{port}/{database}"
         
+        normalized_type = (db_type or "mysql").strip().lower()
         connect_args = {}
-        if ssl_mode and ssl_mode.upper() == "REQUIRED":
-            connect_args["ssl"] = {"ssl_mode": "REQUIRED"}
+
+        if normalized_type in ("postgresql", "postgres"):
+            db_url = f"postgresql+psycopg2://{escaped_user}:{escaped_pw}@{host}:{port}/{database}"
+            ssl_upper = (ssl_mode or "").strip().upper()
+            if ssl_upper in ("REQUIRED", "REQUIRE"):
+                connect_args["sslmode"] = "require"
+                db_url += "?sslmode=require"
+            elif ssl_upper == "DISABLED":
+                connect_args["sslmode"] = "disable"
+                db_url += "?sslmode=disable"
+        else:
+            db_url = f"mysql+pymysql://{escaped_user}:{escaped_pw}@{host}:{port}/{database}"
+            if ssl_mode and ssl_mode.upper() in ("REQUIRED", "REQUIRE"):
+                connect_args["ssl"] = {"ssl_mode": "REQUIRED"}
             
         temp_engine = None
         try:
@@ -191,7 +257,7 @@ class DatabaseService:
                 if res == 1:
                     return {
                         "success": True,
-                        "message": "Database connected successfully",
+                        "message": f"{normalized_type.upper()} database connected successfully",
                         "latency_ms": latency_ms
                     }
                 return {
@@ -199,7 +265,7 @@ class DatabaseService:
                     "message": "Database returned unexpected response"
                 }
         except SQLAlchemyError as exc:
-            err_msg = str(exc.orig) if hasattr(exc, "orig") and exc.orig else "Database connection failed"
+            err_msg = str(exc.orig) if hasattr(exc, "orig") and exc.orig else str(exc)
             logger.error(f"Custom connection test failed: {err_msg}")
             return {
                 "success": False,
@@ -209,7 +275,7 @@ class DatabaseService:
             logger.error(f"Unexpected custom connection test error: {exc}")
             return {
                 "success": False,
-                "message": "Connection test failed: check host, port, and credentials"
+                "message": f"Connection test failed: {str(exc)}"
             }
         finally:
             if temp_engine:
@@ -222,11 +288,14 @@ class DatabaseService:
         database: str,
         user: str,
         password: str,
-        ssl_mode: str = "REQUIRED"
+        ssl_mode: str = "REQUIRED",
+        db_type: str = "mysql"
     ) -> Dict[str, Any]:
         """Test and update active database configuration in settings and .env."""
         from app.config import settings, BASE_DIR
         from app.database import reset_engine
+
+        normalized_type = "postgresql" if (db_type or "").strip().lower() in ("postgresql", "postgres") else "mysql"
 
         # Verify credentials first
         test_res = DatabaseService.test_custom_connection(
@@ -235,12 +304,14 @@ class DatabaseService:
             database=database,
             user=user,
             password=password,
-            ssl_mode=ssl_mode
+            ssl_mode=ssl_mode,
+            db_type=normalized_type
         )
         if not test_res.get("success"):
             return test_res
 
         # Update in-memory settings
+        settings.DB_TYPE = normalized_type
         settings.DB_HOST = host
         settings.DB_PORT = port
         settings.DB_NAME = database
@@ -256,12 +327,17 @@ class DatabaseService:
         try:
             lines = [
                 f"# Database Configuration (Updated via Frontend)",
+                f"DB_TYPE={normalized_type}",
                 f"DB_HOST={host}",
                 f"DB_PORT={port}",
                 f"DB_NAME={database}",
                 f"DB_USER={user}",
                 f"DB_PASSWORD={password}",
                 f"DB_SSL_MODE={ssl_mode}",
+                f"",
+                f"# Groq AI & LangChain Configuration",
+                f"GROQ_API_KEY={settings.GROQ_API_KEY}",
+                f"GROQ_MODEL={settings.GROQ_MODEL}",
                 f"",
                 f"APP_HOST={settings.APP_HOST}",
                 f"APP_PORT={settings.APP_PORT}",
@@ -270,6 +346,12 @@ class DatabaseService:
             env_path.write_text("\n".join(lines), encoding="utf-8")
         except Exception as e:
             logger.warning(f"Could not persist .env file: {e}")
+
+        return {
+            "success": True,
+            "message": f"{normalized_type.upper()} configuration saved and connected successfully",
+            "latency_ms": test_res.get("latency_ms")
+        }
 
         return {
             "success": True,

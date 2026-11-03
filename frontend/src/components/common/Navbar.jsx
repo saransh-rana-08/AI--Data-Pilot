@@ -19,7 +19,7 @@ export default function Navbar({ onOpenMobileSidebar }) {
 
   const mockNotifications = [
     { id: 1, title: 'Schema synchronized', time: '10m ago', unread: true },
-    { id: 2, title: 'college_db backup completed', time: '1h ago', unread: false },
+    { id: 2, title: `${dbConfig.name || 'Database'} backup completed`, time: '1h ago', unread: false },
     { id: 3, title: 'AI model updated to v2.4', time: 'Yesterday', unread: false },
   ];
 
