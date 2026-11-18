@@ -172,3 +172,35 @@ export async function updateAIConfig(config) {
   }
   return data;
 }
+
+/**
+ * Validate row data against table constraints and get preview SQL.
+ */
+export async function validateTableRow(tableName, rowData) {
+  const response = await fetch(`${API_BASE_URL}/api/schema/${encodeURIComponent(tableName)}/validate-row`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: rowData }),
+  });
+  const data = await response.json();
+  return {
+    status: response.status,
+    ...data
+  };
+}
+
+/**
+ * Insert a verified row into a database table.
+ */
+export async function insertTableRow(tableName, rowData) {
+  const response = await fetch(`${API_BASE_URL}/api/schema/${encodeURIComponent(tableName)}/insert`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: rowData }),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || data.error || data.detail || 'Failed to insert row');
+  }
+  return data;
+}

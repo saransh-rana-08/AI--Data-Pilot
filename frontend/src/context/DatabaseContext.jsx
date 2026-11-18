@@ -10,7 +10,9 @@ import {
   disconnectDatabaseAPI,
   generateAISQL,
   fetchAIConfig,
-  updateAIConfig
+  updateAIConfig,
+  validateTableRow,
+  insertTableRow
 } from '../services/api';
 
 const DatabaseContext = createContext();
@@ -339,6 +341,7 @@ export function DatabaseProvider({ children }) {
               references,
               nullable: col.nullable,
               defaultVal: col.default,
+              autoincrement: Boolean(col.autoincrement),
             };
           });
 
@@ -531,6 +534,44 @@ export function DatabaseProvider({ children }) {
     return synced;
   };
 
+  // Insert record into table
+  const insertRecord = async (tableName, rowData) => {
+    try {
+      const res = await insertTableRow(tableName, rowData);
+      if (res.success && res.inserted_row) {
+        // Update local table data and row count immediately
+        setTables(prevTables =>
+          prevTables.map(tbl => {
+            if (tbl.name.toLowerCase() === tableName.toLowerCase()) {
+              const updatedData = [res.inserted_row, ...(tbl.sampleData || [])];
+              return {
+                ...tbl,
+                rowCount: (tbl.rowCount || 0) + 1,
+                sampleData: updatedData
+              };
+            }
+            return tbl;
+          })
+        );
+
+        setDbConfig(prev => {
+          const currentCount = parseInt(String(prev.totalRows || '0').replace(/,/g, ''), 10) || 0;
+          return {
+            ...prev,
+            totalRows: (currentCount + 1).toLocaleString()
+          };
+        });
+
+        addToast('Record Inserted', `Successfully added 1 record to '${tableName}'`, 'success');
+        return { success: true, inserted_row: res.inserted_row };
+      }
+      return { success: false, error: res.message || 'Insertion failed' };
+    } catch (err) {
+      addToast('Insert Failed', err.message, 'error');
+      return { success: false, error: err.message };
+    }
+  };
+
   // Disconnect database (both frontend and backend)
   const disconnectDatabase = async () => {
     try {
@@ -592,6 +633,8 @@ export function DatabaseProvider({ children }) {
         removeToast,
         connectDatabase,
         disconnectDatabase,
+        insertRecord,
+        validateTableRow,
         aiConfig,
         setAiConfig,
         saveAiConfig,

@@ -4,6 +4,7 @@ import Navbar from './Navbar';
 import ConnectionModal from '../modals/ConnectionModal';
 import CommandPalette from './CommandPalette';
 import ToastContainer from './ToastContainer';
+import ErrorBoundary from './ErrorBoundary';
 import { useDatabase } from '../../context/DatabaseContext';
 import DashboardPage from '../../pages/DashboardPage';
 import QueryPage from '../../pages/QueryPage';
@@ -47,7 +48,9 @@ export default function Layout() {
 
         {/* Scrollable Viewport */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {renderActivePage()}
+          <ErrorBoundary>
+            {renderActivePage()}
+          </ErrorBoundary>
         </main>
       </div>
 

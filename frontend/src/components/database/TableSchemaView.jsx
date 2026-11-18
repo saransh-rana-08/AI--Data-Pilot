@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Table2, 
   Key, 
@@ -9,17 +9,36 @@ import {
   FileText, 
   Layers, 
   Sparkles,
-  ArrowUpRight
+  ArrowUpRight,
+  PlusCircle
 } from 'lucide-react';
 import { useDatabase } from '../../context/DatabaseContext';
+import AddRecordModal from '../modals/AddRecordModal';
 
 export default function TableSchemaView() {
   const { tables, navigate } = useDatabase();
-  const [selectedTable, setSelectedTable] = useState(tables[0] || null);
+  const [selectedTableName, setSelectedTableName] = useState(tables[0]?.name || null);
   const [searchFilter, setSearchFilter] = useState('');
   const [activeTab, setActiveTab] = useState('columns'); // 'columns' | 'data'
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const filteredTables = tables.filter(t => 
+  // Sync selected table name when tables load or update
+  useEffect(() => {
+    if (tables.length > 0) {
+      const exists = tables.some(t => t.name === selectedTableName);
+      if (!exists) {
+        setSelectedTableName(tables[0].name);
+      }
+    } else {
+      setSelectedTableName(null);
+    }
+  }, [tables, selectedTableName]);
+
+  const activeTable = (tables.length > 0 && selectedTableName)
+    ? (tables.find(t => t.name === selectedTableName) || tables[0])
+    : (tables[0] || null);
+
+  const filteredTables = (tables || []).filter(t => 
     t.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
     (t.description && t.description.toLowerCase().includes(searchFilter.toLowerCase()))
   );
@@ -53,12 +72,12 @@ export default function TableSchemaView() {
         {/* Tables list */}
         <div className="max-h-[600px] overflow-y-auto divide-y divide-dark-800/60 font-mono">
           {filteredTables.map(table => {
-            const isSelected = selectedTable?.name === table.name;
+            const isSelected = activeTable?.name === table.name;
 
             return (
               <button
                 key={table.name}
-                onClick={() => setSelectedTable(table)}
+                onClick={() => setSelectedTableName(table.name)}
                 className={`w-full flex items-center justify-between p-3 text-left transition-all group ${
                   isSelected
                     ? 'bg-indigo-600/10 border-l-2 border-l-indigo-500 text-white'
@@ -90,38 +109,48 @@ export default function TableSchemaView() {
       </div>
 
       {/* Right Column: Selected Table Detail Panel */}
-      {selectedTable && (
+      {activeTable && (
         <div className="lg:col-span-8 rounded-2xl bg-dark-900 border border-dark-700/80 shadow-subtle overflow-hidden">
           {/* Header */}
           <div className="p-5 border-b border-dark-800 bg-dark-850/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2.5">
                 <h3 className="text-base font-semibold text-dark-100 font-mono">
-                  {selectedTable.name}
+                  {activeTable.name}
                 </h3>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-dark-800 text-dark-300 border border-dark-700 font-sans">
-                  {selectedTable.rowCount?.toLocaleString()} rows
+                  {activeTable.rowCount?.toLocaleString()} rows
                 </span>
               </div>
-              {selectedTable.description && (
+              {activeTable.description && (
                 <p className="text-xs text-dark-400 mt-1">
-                  {selectedTable.description}
+                  {activeTable.description}
                 </p>
               )}
             </div>
 
-            {/* Quick action: query this table */}
-            <button
-              onClick={() => navigate('query', { 
-                prompt: `Show the first 10 records from ${selectedTable.name}`, 
-                runImmediately: true 
-              })}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-xs font-medium text-indigo-300 transition-colors shrink-0"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Query Table</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
+            {/* Header Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-sm transition-all active:scale-[0.98]"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Add Record</span>
+              </button>
+
+              <button
+                onClick={() => navigate('query', { 
+                  prompt: `Show the first 10 records from ${activeTable.name}`, 
+                  runImmediately: true 
+                })}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-xs font-medium text-indigo-300 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Query</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Sub-tabs: Columns vs Preview Data */}
@@ -134,7 +163,7 @@ export default function TableSchemaView() {
                   : 'border-transparent text-dark-400 hover:text-dark-200'
               }`}
             >
-              Columns & Types ({selectedTable.columns?.length || 0})
+              Columns & Types ({activeTable?.columns?.length || 0})
             </button>
             <button
               onClick={() => setActiveTab('data')}
@@ -161,7 +190,7 @@ export default function TableSchemaView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-800/60 font-mono">
-                  {selectedTable.columns?.map(col => (
+                  {activeTable.columns?.map(col => (
                     <tr key={col.name} className="hover:bg-dark-850/40 transition-colors">
                       <td className="py-3 px-5 font-medium text-dark-100 flex items-center gap-2">
                         {col.isPrimary && <Key className="w-3.5 h-3.5 text-amber-400" title="Primary Key" />}
@@ -176,6 +205,11 @@ export default function TableSchemaView() {
                           {col.isPrimary && (
                             <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-medium">
                               Primary Key
+                            </span>
+                          )}
+                          {col.autoincrement && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-medium">
+                              Auto
                             </span>
                           )}
                           {col.isForeign && (
@@ -205,36 +239,81 @@ export default function TableSchemaView() {
 
           {/* Tab 2: Sample data preview */}
           {activeTab === 'data' && (
-            <div className="overflow-x-auto">
-              {selectedTable.sampleData && selectedTable.sampleData.length > 0 ? (
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-dark-800 bg-dark-950/40 text-dark-400 font-mono text-[11px] uppercase tracking-wider">
-                      {Object.keys(selectedTable.sampleData[0]).map(key => (
-                        <th key={key} className="py-3 px-4 font-medium">{key}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-dark-800/60 font-mono">
-                    {selectedTable.sampleData.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-dark-850/40 transition-colors">
-                        {Object.values(row).map((val, cIdx) => (
-                          <td key={cIdx} className="py-3 px-4 text-dark-200">
-                            {String(val)}
-                          </td>
+            <div>
+              {/* Preview action toolbar */}
+              <div className="p-3 bg-dark-950/60 border-b border-dark-800 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-dark-400">
+                  <Database className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Showing recent records in <span className="font-mono text-dark-200">{activeTable.name}</span></span>
+                </div>
+
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-xs font-medium text-emerald-300 transition-colors"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Add New Record</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                {activeTable.sampleData && activeTable.sampleData.length > 0 ? (
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-dark-800 bg-dark-950/40 text-dark-400 font-mono text-[11px] uppercase tracking-wider">
+                        {Object.keys(activeTable.sampleData[0]).map(key => (
+                          <th key={key} className="py-3 px-4 font-medium">{key}</th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="p-8 text-center text-dark-400 text-xs">
-                  No sample rows cached for this table.
-                </div>
-              )}
+                    </thead>
+                    <tbody className="divide-y divide-dark-800/60 font-mono">
+                      {activeTable.sampleData.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-dark-850/40 transition-colors">
+                          {Object.values(row).map((val, cIdx) => (
+                            <td key={cIdx} className="py-3 px-4 text-dark-200">
+                              {String(val)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="p-8 text-center text-dark-400 text-xs space-y-3">
+                    <p>No sample rows cached for this table.</p>
+                    <button
+                      onClick={() => setIsAddModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition-colors"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Insert First Record</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
+      )}
+
+      {(!tables || tables.length === 0) && (
+        <div className="lg:col-span-8 rounded-2xl bg-dark-900 border border-dark-700/80 p-8 text-center space-y-3">
+          <Database className="w-8 h-8 text-dark-500 mx-auto" />
+          <h3 className="text-sm font-semibold text-dark-200">No tables detected</h3>
+          <p className="text-xs text-dark-400 max-w-sm mx-auto">
+            No tables were discovered in the public schema of this database. Click Refresh above to re-inspect.
+          </p>
+        </div>
+      )}
+
+      {/* Add Record Verification & Insertion Modal */}
+      {activeTable && (
+        <AddRecordModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          table={activeTable}
+          onRecordInserted={() => setActiveTab('data')}
+        />
       )}
     </div>
   );

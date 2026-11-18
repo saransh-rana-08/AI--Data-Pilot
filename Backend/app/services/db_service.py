@@ -429,5 +429,201 @@ class DatabaseService:
                 "execution_time_ms": execution_time_ms
             }
 
+    @staticmethod
+    def validate_row_data(table_name: str, row_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validates row data against table schema:
+        - checks required NOT NULL columns have values if necessary
+        - checks type correctness (integer, float/decimal, date, boolean)
+        - generates preview SQL for verification before final insertion
+        """
+        from app.services.schema_service import schema_service
+
+        table_info = schema_service.get_table_schema(table_name)
+        if not table_info:
+            return {
+                "valid": False,
+                "errors": {"_general": f"Table '{table_name}' not found in active database"},
+                "preview_sql": None,
+                "message": f"Table '{table_name}' does not exist",
+                "cleaned_data": {}
+            }
+
+        columns = table_info.get("columns", [])
+        col_map = {c["name"]: c for c in columns}
+        errors: Dict[str, str] = {}
+        cleaned_params: Dict[str, Any] = {}
+
+        # 1. Check for unknown columns
+        for col_name in row_data.keys():
+            if col_name not in col_map:
+                errors[col_name] = f"Column '{col_name}' does not exist in table '{table_name}'"
+
+        # 2. Check each column constraints & coerce types
+        for col in columns:
+            c_name = col["name"]
+            c_type = (col.get("type") or "").upper()
+            is_nullable = col.get("nullable", True)
+            is_auto = col.get("autoincrement", False)
+            default_val = col.get("default")
+
+            val = row_data.get(c_name)
+
+            # Auto-increment / sequence primary key: can be left empty
+            if is_auto and (val is None or (isinstance(val, str) and val.strip() == "")):
+                continue
+
+            # Check required
+            is_empty = val is None or (isinstance(val, str) and val.strip() == "")
+            if not is_nullable and is_empty and default_val is None and not is_auto:
+                errors[c_name] = f"'{c_name}' is required and cannot be empty"
+                continue
+
+            if is_empty:
+                # Nullable column with no input
+                cleaned_params[c_name] = None
+                continue
+
+            # Type checking and parsing
+            str_val = str(val).strip()
+            if any(t in c_type for t in ("INT", "SERIAL")):
+                try:
+                    cleaned_params[c_name] = int(str_val)
+                except ValueError:
+                    errors[c_name] = f"'{c_name}' must be a valid integer"
+            elif any(t in c_type for t in ("NUMERIC", "DECIMAL", "FLOAT", "DOUBLE", "REAL")):
+                try:
+                    cleaned_params[c_name] = float(str_val)
+                except ValueError:
+                    errors[c_name] = f"'{c_name}' must be a valid numeric/decimal value"
+            elif "BOOL" in c_type:
+                if str_val.lower() in ("true", "1", "yes", "t"):
+                    cleaned_params[c_name] = True
+                elif str_val.lower() in ("false", "0", "no", "f"):
+                    cleaned_params[c_name] = False
+                else:
+                    errors[c_name] = f"'{c_name}' must be true or false"
+            elif "DATE" in c_type and "TIME" not in c_type:
+                if not re.match(r"^\d{4}-\d{2}-\d{2}$", str_val):
+                    errors[c_name] = f"'{c_name}' must be a valid date in YYYY-MM-DD format"
+                else:
+                    cleaned_params[c_name] = str_val
+            else:
+                cleaned_params[c_name] = str_val
+
+        # 3. Generate preview SQL for user verification
+        preview_sql = None
+        if not errors:
+            db_type = (settings.DB_TYPE or "mysql").strip().lower()
+            quote = '"' if db_type in ("postgresql", "postgres") else '`'
+            
+            insert_cols = list(cleaned_params.keys())
+            if insert_cols:
+                cols_str = ", ".join(f"{quote}{c}{quote}" for c in insert_cols)
+                formatted_vals = []
+                for c in insert_cols:
+                    v = cleaned_params[c]
+                    if v is None:
+                        formatted_vals.append("NULL")
+                    elif isinstance(v, (int, float)):
+                        formatted_vals.append(str(v))
+                    elif isinstance(v, bool):
+                        formatted_vals.append("TRUE" if v else "FALSE")
+                    else:
+                        escaped = str(v).replace("'", "''")
+                        formatted_vals.append(f"'{escaped}'")
+                vals_str = ", ".join(formatted_vals)
+                preview_sql = f"INSERT INTO {quote}{table_name}{quote} ({cols_str})\nVALUES ({vals_str});"
+            else:
+                preview_sql = f"INSERT INTO {quote}{table_name}{quote} DEFAULT VALUES;"
+
+        valid = len(errors) == 0
+        message = "All column values are valid" if valid else f"{len(errors)} validation error(s) found"
+        return {
+            "valid": valid,
+            "errors": errors,
+            "preview_sql": preview_sql,
+            "message": message,
+            "cleaned_data": cleaned_params if valid else {}
+        }
+
+    @staticmethod
+    def insert_row(table_name: str, row_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Safely inserts a verified new row into the specified table using parameterized SQL.
+        Returns the inserted row data after commit.
+        """
+        # 1. Validate data first
+        val_res = DatabaseService.validate_row_data(table_name, row_data)
+        if not val_res["valid"]:
+            return {
+                "success": False,
+                "error": "; ".join(f"{k}: {v}" for k, v in val_res["errors"].items()),
+                "errors": val_res["errors"]
+            }
+
+        cleaned = val_res["cleaned_data"]
+        db_type = (settings.DB_TYPE or "mysql").strip().lower()
+        is_postgres = db_type in ("postgresql", "postgres")
+        quote = '"' if is_postgres else '`'
+
+        cols = list(cleaned.keys())
+        if not cols:
+            if is_postgres:
+                sql = f'INSERT INTO {quote}{table_name}{quote} DEFAULT VALUES RETURNING *;'
+            else:
+                sql = f'INSERT INTO {quote}{table_name}{quote} () VALUES ();'
+            params = {}
+        else:
+            cols_str = ", ".join(f"{quote}{c}{quote}" for c in cols)
+            placeholders_str = ", ".join(f":{c}" for c in cols)
+            sql = f"INSERT INTO {quote}{table_name}{quote} ({cols_str}) VALUES ({placeholders_str})"
+            if is_postgres:
+                sql += " RETURNING *;"
+            else:
+                sql += ";"
+            params = cleaned
+
+        try:
+            engine = get_engine()
+            with engine.begin() as conn:
+                result = conn.execute(text(sql), params)
+                
+                inserted_row = {}
+                if is_postgres and result.returns_rows:
+                    row_map = result.mappings().fetchone()
+                    if row_map:
+                        inserted_row = {k: serialize_value(v) for k, v in dict(row_map).items()}
+                else:
+                    inserted_row = {k: serialize_value(v) for k, v in cleaned.items()}
+                    if hasattr(result, "lastrowid") and result.lastrowid:
+                        from app.services.schema_service import schema_service
+                        t_info = schema_service.get_table_schema(table_name)
+                        if t_info and t_info.get("primary_keys"):
+                            pk = t_info["primary_keys"][0]
+                            inserted_row[pk] = result.lastrowid
+
+                logger.info(f"Successfully inserted row into '{table_name}': {inserted_row}")
+                return {
+                    "success": True,
+                    "message": f"Successfully inserted 1 record into '{table_name}'",
+                    "inserted_row": inserted_row,
+                    "affected_rows": 1
+                }
+
+        except SQLAlchemyError as exc:
+            error_message = str(exc.orig) if hasattr(exc, "orig") and exc.orig else str(exc)
+            logger.error(f"Failed to insert row into '{table_name}': {error_message}")
+            return {
+                "success": False,
+                "error": f"Database insertion error: {error_message}"
+            }
+        except Exception as exc:
+            logger.error(f"Unexpected error inserting row into '{table_name}': {exc}")
+            return {
+                "success": False,
+                "error": f"Failed to insert record: {str(exc)}"
+            }
+
 
 db_service = DatabaseService()

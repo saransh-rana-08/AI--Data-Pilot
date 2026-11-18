@@ -69,11 +69,17 @@ class SchemaService:
         raw_columns = inspector.get_columns(table_name)
         columns_data = []
         for col in raw_columns:
+            default_val = str(col.get("default")) if col.get("default") is not None else None
+            is_auto = bool(
+                col.get("autoincrement") is True
+                or (default_val and ("nextval" in default_val.lower() or "auto_increment" in default_val.lower()))
+            )
             columns_data.append({
                 "name": col.get("name"),
                 "type": str(col.get("type")),
                 "nullable": bool(col.get("nullable", True)),
-                "default": str(col.get("default")) if col.get("default") is not None else None
+                "default": default_val,
+                "autoincrement": is_auto
             })
 
         # Retrieve primary keys
